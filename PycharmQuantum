@@ -1,0 +1,72 @@
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.datasets import load_wine
+from sklearn.preprocessing import MaxAbsScaler
+from sklearn.metrics import accuracy_score
+from sklearn.svm import SVC
+import pennylane as qml
+from sklearn.decomposition import PCA
+from qiskit_machine_learning.kernels import QuantumKernel
+from qiskit.providers.aer import AerSimulator
+from qiskit.circuit.library import ZZFeatureMap
+from qiskit_machine_learning.algorithms import QSVC
+from qiskit.circuit import ParameterVector
+from qiskit import *
+from qiskit.circuit import Parameter
+
+seed = 1234
+np.random.seed(seed)
+
+
+x, y = load_wine(return_X_y=True)
+
+# indices for each class
+idx_class0 = np.where(y == 0)[0][:6]
+idx_class1 = np.where(y == 1)[0][:6]
+
+# combine and extract
+idx = np.concatenate([idx_class0, idx_class1])
+x_small = x[idx]
+y_small = y[idx]
+
+x_tr, x_test, y_tr, y_test = train_test_split(x_small, y_small, train_size=0.7)
+
+
+scaler = MaxAbsScaler()
+x_tr = scaler.fit_transform(x_tr)
+
+x_test = scaler.transform(x_test)
+x_test = np.clip(x_test, 0, 1)
+
+
+
+pca = PCA(n_components=3)
+xs_tr = pca.fit_transform(x_tr)
+xs_test = pca.transform(x_test)
+
+
+ibm_token = "1YoD2JW0lRfK4dJNmWZf2fQTV7zpzxTWe4UKboQmwLVd"
+IBMQ.save_account(ibm_token)
+
+provider = IBMQ.load_account()
+
+from qiskit.providers.ibmq import *
+
+dev_list = provider.backends(
+    filters=lambda x: x.configuration().n_qubits >= 5,
+    simulator=False)
+
+dev = least_busy(dev_list)
+
+
+zzfm = ZZFeatureMap(3)
+
+
+qkernel = QuantumKernel(feature_map=zzfm, quantum_instance=dev)
+
+
+
+qsvm = QSVC(quantum_kernel=qkernel)
+qsvm.fit(xs_tr, y_tr)
+
+print(accuracy_score(qsvm.predict(xs_test), y_test))
